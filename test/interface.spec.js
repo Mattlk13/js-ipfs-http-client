@@ -2,63 +2,92 @@
 'use strict'
 
 const tests = require('interface-ipfs-core')
-const isNode = require('detect-node')
-const CommonFactory = require('./utils/interface-common-factory')
-const ipfsClient = require('../src')
+const factory = require('./utils/factory')
 const isWindows = process.platform && process.platform === 'win32'
 
-describe('interface-ipfs-core tests', () => {
-  const defaultCommonFactory = CommonFactory.create()
+/** @typedef {import("ipfsd-ctl").ControllerOptions} ControllerOptions */
 
-  tests.bitswap(defaultCommonFactory, {
+describe('interface-ipfs-core tests', () => {
+  const commonFactory = factory()
+
+  tests.root(commonFactory, {
     skip: [
-      // bitswap.stat
       {
-        name: 'should not get bitswap stats when offline',
-        reason: 'FIXME go-ipfs returns an error https://github.com/ipfs/go-ipfs/issues/4078'
-      },
-      // bitswap.wantlist
-      {
-        name: 'should not get the wantlist when offline',
-        reason: 'FIXME go-ipfs returns an error https://github.com/ipfs/go-ipfs/issues/4078'
-      },
-      // bitswap.unwant
-      {
-        name: 'should remove a key from the wantlist',
-        reason: 'FIXME why is this skipped?'
+        name: 'should add with mode as string',
+        reason: 'TODO not implemented in go-ipfs yet'
       },
       {
-        name: 'should not remove a key from the wantlist when offline',
-        reason: 'FIXME go-ipfs returns an error https://github.com/ipfs/go-ipfs/issues/4078'
+        name: 'should add with mode as number',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should add with mtime as Date',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should add with mtime as { nsecs, secs }',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should add with mtime as timespec',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should add with mtime as hrtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should export a chunk of a file',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should ls with metadata',
+        reason: 'TODO not implemented in go-ipfs yet'
       }
     ]
   })
 
-  tests.block(defaultCommonFactory, {
+  tests.bitswap(commonFactory)
+
+  tests.block(commonFactory, {
     skip: [{
       name: 'should get a block added as CIDv1 with a CIDv0',
       reason: 'go-ipfs does not support the `version` param'
     }]
   })
 
-  tests.bootstrap(defaultCommonFactory)
+  tests.bootstrap(commonFactory, {
+    skip: [{
+      name: 'should return a list containing the bootstrap peer when called with a valid arg (ip4)',
+      reason: 'TODO unskip when go-ipfs switches to p2p for libp2p keys'
+    }, {
+      name: 'should prevent duplicate inserts of bootstrap peers',
+      reason: 'TODO unskip when go-ipfs switches to p2p for libp2p keys'
+    }, {
+      name: 'should return a list containing the peer removed when called with a valid arg (ip4)',
+      reason: 'TODO unskip when go-ipfs switches to p2p for libp2p keys'
+    }]
+  })
 
-  tests.config(defaultCommonFactory, {
+  tests.config(commonFactory, {
     skip: [
       // config.replace
       {
         name: 'replace',
         reason: 'FIXME Waiting for fix on go-ipfs https://github.com/ipfs/js-ipfs-http-client/pull/307#discussion_r69281789 and https://github.com/ipfs/go-ipfs/issues/2927'
       },
-      // config.profile
       {
-        name: 'profile',
-        reason: 'TODO not yet implemented https://github.com/ipfs/js-ipfs-http-client/pull/1030'
+        name: 'should list config profiles',
+        reason: 'TODO: Not implemented in go-ipfs'
+      },
+      {
+        name: 'should strip private key from diff output',
+        reason: 'TODO: Not implemented in go-ipfs'
       }
     ]
   })
 
-  tests.dag(defaultCommonFactory, {
+  tests.dag(commonFactory, {
     skip: [
       // dag.tree
       {
@@ -85,113 +114,182 @@ describe('interface-ipfs-core tests', () => {
     ]
   })
 
-  tests.dht(defaultCommonFactory, {
-    skip: [
-      // dht.findpeer
-      {
-        name: 'should fail to find other peer if peer does not exist',
-        reason: 'FIXME checking what is exactly go-ipfs returning https://github.com/ipfs/go-ipfs/issues/3862#issuecomment-294168090'
-      },
-      // dht.findprovs
-      {
-        name: 'should take options to override timeout config',
-        reason: 'FIXME go-ipfs does not support a timeout option'
-      },
-      // dht.get
-      {
-        name: 'should get a value after it was put on another node',
-        reason: 'FIXME go-ipfs errors with  Error: key was not found (type 6) https://github.com/ipfs/go-ipfs/issues/3862'
-      }
-    ]
-  })
+  tests.dht(commonFactory)
 
-  tests.filesRegular(defaultCommonFactory, {
-    skip: [
-      // .add
-      isNode ? null : {
-        name: 'should add a nested directory as array of tupples',
-        reason: 'FIXME https://github.com/ipfs/js-ipfs-http-client/issues/339'
-      },
-      isNode ? null : {
-        name: 'should add a nested directory as array of tupples with progress',
-        reason: 'FIXME https://github.com/ipfs/js-ipfs-http-client/issues/339'
-      },
-      // .addPullStream
-      isNode ? null : {
-        name: 'should add pull stream of valid files and dirs',
-        reason: 'FIXME https://github.com/ipfs/js-ipfs-http-client/issues/339'
-      },
-      // .addReadableStream
-      isNode ? null : {
-        name: 'should add readable stream of valid files and dirs',
-        reason: 'FIXME https://github.com/ipfs/js-ipfs-http-client/issues/339'
-      },
-      // .addFromStream
-      isNode ? null : {
-        name: 'addFromStream',
-        reason: 'Not designed to run in the browser'
-      },
-      // .addFromFs
-      isNode ? null : {
-        name: 'addFromFs',
-        reason: 'Not designed to run in the browser'
-      },
-      // .addFromURL
-      isNode ? null : {
-        name: 'addFromURL',
-        reason: 'Not designed to run in the browser'
-      },
-      // TODO: remove when interface-ipfs-core updated
-      isNode ? null : {
-        name: 'addFromUrl',
-        reason: 'Not designed to run in the browser'
-      },
-      // .catPullStream
-      {
-        name: 'should export a chunk of a file',
-        reason: 'TODO not implemented in go-ipfs yet'
-      },
-      {
-        name: 'should export a chunk of a file in a Pull Stream',
-        reason: 'TODO not implemented in go-ipfs yet'
-      },
-      {
-        name: 'should export a chunk of a file in a Readable Stream',
-        reason: 'TODO not implemented in go-ipfs yet'
-      },
-      // .get
-      isNode ? null : {
-        name: 'should get a directory',
-        reason: 'FIXME https://github.com/ipfs/js-ipfs-http-client/issues/339'
-      },
-      // .ls
-      isNode ? null : {
-        name: 'should ls with a base58 encoded CID',
-        reason: 'FIXME https://github.com/ipfs/js-ipfs-http-client/issues/339'
-      },
-      // .lsPullStream
-      isNode ? null : {
-        name: 'should pull stream ls with a base58 encoded CID',
-        reason: 'FIXME https://github.com/ipfs/js-ipfs-http-client/issues/339'
-      },
-      // .lsReadableStream
-      isNode ? null : {
-        name: 'should readable stream ls with a base58 encoded CID',
-        reason: 'FIXME https://github.com/ipfs/js-ipfs-http-client/issues/339'
-      }
-    ]
-  })
-
-  tests.filesMFS(defaultCommonFactory, {
+  tests.files(commonFactory, {
     skip: [
       {
-        name: 'should ls directory with long option',
+        name: 'should ls directory',
         reason: 'TODO unskip when go-ipfs supports --long https://github.com/ipfs/go-ipfs/pull/6528'
+      },
+      {
+        name: 'should list a file directly',
+        reason: 'TODO unskip when go-ipfs supports --long https://github.com/ipfs/go-ipfs/pull/6528'
+      },
+      {
+        name: 'should ls directory and include metadata',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should read from outside of mfs',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should ls from outside of mfs',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should change file mode',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should change directory mode',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should change file mode as string',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should change file mode to 0',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should update file mtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should update directory mtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should make directory and specify mode',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should make directory and specify mtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should write file and specify mode',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should write file and specify mtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should respect metadata when copying files',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should respect metadata when copying directories',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should respect metadata when copying from outside of mfs',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should have default mtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should set mtime as Date',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should set mtime as { nsecs, secs }',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should set mtime as timespec',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should set mtime as hrtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should make directory and have default mode',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should make directory and specify mode as string',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should make directory and specify mode as number',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should make directory and specify mtime as Date',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should make directory and specify mtime as { nsecs, secs }',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should make directory and specify mtime as timespec',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should make directory and specify mtime as hrtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should write file and specify mode as a string',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should write file and specify mode as a number',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should write file and specify mtime as Date',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should write file and specify mtime as { nsecs, secs }',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should write file and specify mtime as timespec',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should write file and specify mtime as hrtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should stat file with mode',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should stat file with mtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should stat dir with mode',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should stat dir with mtime',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should stat sharded dir with mode',
+        reason: 'TODO not implemented in go-ipfs yet'
+      },
+      {
+        name: 'should stat sharded dir with mtime',
+        reason: 'TODO not implemented in go-ipfs yet'
       }
     ]
   })
 
-  tests.key(defaultCommonFactory, {
+  tests.key(commonFactory, {
     skip: [
       // key.export
       {
@@ -206,29 +304,32 @@ describe('interface-ipfs-core tests', () => {
     ]
   })
 
-  tests.miscellaneous(defaultCommonFactory, {
+  tests.miscellaneous(commonFactory)
+
+  tests.name(factory(
+    {
+      ipfsOptions: {
+        offline: true
+      }
+    }
+  ), {
     skip: [
-      // stop
       {
-        name: 'should stop the node',
-        reason: 'FIXME go-ipfs returns an error https://github.com/ipfs/go-ipfs/issues/4078'
+        name: 'should resolve a record from peerid as cidv1 in base32',
+        reason: 'TODO not implemented in go-ipfs yet: https://github.com/ipfs/go-ipfs/issues/5287'
       }
     ]
   })
 
-  tests.name(CommonFactory.create({
-    spawnOptions: {
-      args: ['--offline']
+  tests.namePubsub(factory(
+    {
+      ipfsOptions: {
+        EXPERIMENTAL: {
+          ipnsPubsub: true
+        }
+      }
     }
-  }))
-
-  // TODO: uncomment after https://github.com/ipfs/interface-ipfs-core/pull/361 being merged and a new release
-  tests.namePubsub(CommonFactory.create({
-    spawnOptions: {
-      args: ['--enable-namesys-pubsub'],
-      initOptions: { bits: 1024 }
-    }
-  }), {
+  ), {
     skip: [
       // name.pubsub.cancel
       {
@@ -243,20 +344,12 @@ describe('interface-ipfs-core tests', () => {
     ]
   })
 
-  tests.object(defaultCommonFactory)
+  tests.object(commonFactory)
 
-  tests.pin(defaultCommonFactory)
+  tests.pin(commonFactory)
 
-  tests.ping(defaultCommonFactory, {
+  tests.ping(commonFactory, {
     skip: [
-      {
-        name: 'should fail when pinging an unknown peer over pull stream',
-        reason: 'FIXME go-ipfs return success with text: Looking up peer <cid>'
-      },
-      {
-        name: 'should fail when pinging peer that is not available over readable stream',
-        reason: 'FIXME go-ipfs return success with text: Looking up peer <cid>'
-      },
       {
         name: 'should fail when pinging a peer that is not available',
         reason: 'FIXME go-ipfs return success with text: Looking up peer <cid>'
@@ -264,59 +357,27 @@ describe('interface-ipfs-core tests', () => {
     ]
   })
 
-  tests.pubsub(CommonFactory.create({
-    spawnOptions: {
-      args: ['--enable-pubsub-experiment'],
-      initOptions: { bits: 1024 }
+  tests.pubsub(factory({}, {
+    go: {
+      args: ['--enable-pubsub-experiment']
     }
   }), {
-    skip: isNode ? [
+    skip: isWindows ? [
       // pubsub.subscribe
-      isWindows ? {
+      {
         name: 'should send/receive 100 messages',
         reason: 'FIXME https://github.com/ipfs/interface-ipfs-core/pull/188#issuecomment-354673246 and https://github.com/ipfs/go-ipfs/issues/4778'
-      } : null,
-      isWindows ? {
+      },
+      {
         name: 'should receive multiple messages',
         reason: 'FIXME https://github.com/ipfs/interface-ipfs-core/pull/188#issuecomment-354673246 and https://github.com/ipfs/go-ipfs/issues/4778'
-      } : null
-    ] : {
-      reason: 'FIXME pubsub is not supported in the browser https://github.com/ipfs/js-ipfs-http-client/issues/518'
-    }
+      }
+    ] : null
   })
 
-  tests.repo(defaultCommonFactory)
+  tests.repo(commonFactory)
 
-  tests.stats(defaultCommonFactory)
+  tests.stats(commonFactory)
 
-  tests.swarm(CommonFactory.create({
-    createSetup ({ ipfsFactory, nodes }) {
-      return callback => {
-        callback(null, {
-          spawnNode (repoPath, config, cb) {
-            if (typeof repoPath === 'function') {
-              cb = repoPath
-              repoPath = undefined
-            }
-
-            if (typeof config === 'function') {
-              cb = config
-              config = undefined
-            }
-
-            const spawnOptions = { repoPath, config, initOptions: { bits: 1024, profile: 'test' } }
-
-            ipfsFactory.spawn(spawnOptions, (err, _ipfsd) => {
-              if (err) {
-                return cb(err)
-              }
-
-              nodes.push(_ipfsd)
-              cb(null, ipfsClient(_ipfsd.apiAddr))
-            })
-          }
-        })
-      }
-    }
-  }))
+  tests.swarm(commonFactory)
 })

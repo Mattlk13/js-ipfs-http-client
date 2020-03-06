@@ -3,19 +3,15 @@
 
 'use strict'
 
-const chai = require('chai')
-const dirtyChai = require('dirty-chai')
-const expect = chai.expect
-chai.use(dirtyChai)
-const isNode = require('detect-node')
-const series = require('async/series')
+const { expect } = require('interface-ipfs-core/src/utils/mocha')
 const loadFixture = require('aegir/fixtures')
+const all = require('it-all')
+const concat = require('it-concat')
 
-const ipfsClient = require('../src')
-const f = require('./utils/factory')
+const f = require('./utils/factory')()
 
 describe('.get (specific go-ipfs features)', function () {
-  this.timeout(20 * 1000)
+  this.timeout(60 * 1000)
 
   function fixture (path) {
     return loadFixture(path, 'interface-ipfs-core')
@@ -26,92 +22,63 @@ describe('.get (specific go-ipfs features)', function () {
     data: fixture('test/fixtures/testfile.txt')
   }
 
-  let ipfsd
   let ipfs
 
-  before(function (done) {
-    series([
-      (cb) => f.spawn({ initOptions: { bits: 1024, profile: 'test' } }, (err, _ipfsd) => {
-        expect(err).to.not.exist()
-        ipfsd = _ipfsd
-        ipfs = ipfsClient(_ipfsd.apiAddr)
-        cb()
-      }),
-      (cb) => ipfs.add(smallFile.data, cb)
-    ], done)
+  before(async () => {
+    ipfs = (await f.spawn()).api
+    await all(ipfs.add(smallFile.data))
   })
 
-  after((done) => {
-    if (!ipfsd) { return done() }
-    ipfsd.stop(done)
+  after(() => f.clean())
+
+  it('no compression args', async () => {
+    const files = await all(ipfs.get(smallFile.cid))
+
+    expect(files).to.be.length(1)
+    const content = await concat(files[0].content)
+    expect(content.toString()).to.contain(smallFile.data.toString())
   })
 
-  it('no compression args', (done) => {
-    ipfs.get(smallFile.cid, (err, files) => {
-      expect(err).to.not.exist()
+  it('archive true', async () => {
+    const files = await all(ipfs.get(smallFile.cid, { archive: true }))
 
-      expect(files).to.be.length(1)
-      expect(files[0].content.toString()).to.contain(smallFile.data.toString())
-      done()
-    })
+    expect(files).to.be.length(1)
+    const content = await concat(files[0].content)
+    expect(content.toString()).to.contain(smallFile.data.toString())
   })
 
-  it('archive true', (done) => {
-    ipfs.get(smallFile.cid, { archive: true }, (err, files) => {
-      expect(err).to.not.exist()
-
-      expect(files).to.be.length(1)
-      expect(files[0].content.toString()).to.contain(smallFile.data.toString())
-      done()
-    })
-  })
-
-  it('err with out of range compression level', (done) => {
-    ipfs.get(smallFile.cid, {
+  it('err with out of range compression level', async () => {
+    await expect(all(ipfs.get(smallFile.cid, {
       compress: true,
-      'compression-level': 10
-    }, (err, files) => {
-      expect(err).to.exist()
-      expect(err.toString()).to.equal('Error: compression level must be between 1 and 9')
-      done()
-    })
+      compressionLevel: 10
+    }))).to.be.rejectedWith('compression level must be between 1 and 9')
   })
 
   // TODO Understand why this test started failing
-  it.skip('with compression level', (done) => {
-    ipfs.get(smallFile.cid, { compress: true, 'compression-level': 1 }, done)
+  it.skip('with compression level', async () => {
+    await all(ipfs.get(smallFile.cid, { compress: true, 'compression-level': 1 }))
   })
 
-  it('add path containing "+"s (for testing get)', (done) => {
-    if (!isNode) { return done() }
-
+  it('add path containing "+"s (for testing get)', async () => {
     const filename = 'ti,c64x+mega++mod-pic.txt'
     const subdir = 'tmp/c++files'
     const expectedCid = 'QmPkmARcqjo5fqK1V1o8cFsuaXxWYsnwCNLJUYS4KeZyff'
-    ipfs.add([{
-      path: subdir + '/' + filename,
-      content: Buffer.from(subdir + '/' + filename, 'utf-8')
-    }], (err, files) => {
-      expect(err).to.not.exist()
-      expect(files[2].hash).to.equal(expectedCid)
-      done()
-    })
+    const path = `${subdir}/${filename}`
+    const files = await all(ipfs.add([{
+      path,
+      content: Buffer.from(path)
+    }]))
+
+    expect(files[2].cid.toString()).to.equal(expectedCid)
   })
 
-  it('get path containing "+"s', (done) => {
-    if (!isNode) { return done() }
-
+  it('get path containing "+"s', async () => {
     const cid = 'QmPkmARcqjo5fqK1V1o8cFsuaXxWYsnwCNLJUYS4KeZyff'
-    let count = 0
-    ipfs.get(cid, (err, files) => {
-      expect(err).to.not.exist()
-      files.forEach((file) => {
-        if (file.path !== cid) {
-          count++
-          expect(file.path).to.contain('+')
-          if (count === 2) done()
-        }
-      })
-    })
+    const files = await all(ipfs.get(cid))
+
+    expect(files).to.be.an('array').with.lengthOf(3)
+    expect(files[0]).to.have.property('path', cid)
+    expect(files[1]).to.have.property('path', `${cid}/c++files`)
+    expect(files[2]).to.have.property('path', `${cid}/c++files/ti,c64x+mega++mod-pic.txt`)
   })
 })

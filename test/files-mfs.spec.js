@@ -2,20 +2,14 @@
 /* eslint max-nested-callbacks: ["error", 8] */
 'use strict'
 
-const chai = require('chai')
-const dirtyChai = require('dirty-chai')
-const expect = chai.expect
-chai.use(dirtyChai)
+const { expect } = require('interface-ipfs-core/src/utils/mocha')
 const loadFixture = require('aegir/fixtures')
 const mh = require('multihashes')
-const CID = require('cids')
-const values = require('pull-stream/sources/values')
-const pull = require('pull-stream/pull')
-const collect = require('pull-stream/sinks/collect')
+const all = require('it-all')
+const pipe = require('it-pipe')
+const { TimeoutError } = require('ky-universal')
 
-const ipfsClient = require('../src')
-const f = require('./utils/factory')
-const expectTimeout = require('./utils/expect-timeout')
+const f = require('./utils/factory')()
 
 const testfile = loadFixture('test/fixtures/testfile.txt')
 
@@ -34,159 +28,120 @@ const HASH_ALGS = [
 describe('.files (the MFS API part)', function () {
   this.timeout(20 * 1000)
 
-  let ipfsd
   let ipfs
 
   const expectedMultihash = 'Qma4hjFTnCasJ8PVp3mZbZK5g2vGDT4LByLJ7m8ciyRFZP'
 
-  before((done) => {
-    f.spawn({ initOptions: { bits: 1024, profile: 'test' } }, (err, _ipfsd) => {
-      expect(err).to.not.exist()
-      ipfsd = _ipfsd
-      ipfs = ipfsClient(_ipfsd.apiAddr)
-      done()
-    })
+  before(async () => {
+    ipfs = (await f.spawn()).api
   })
 
-  after((done) => {
-    if (!ipfsd) return done()
-    ipfsd.stop(done)
+  after(() => f.clean())
+
+  it('.add file for testing', async () => {
+    const res = await all(ipfs.add(testfile))
+
+    expect(res).to.have.length(1)
+    expect(res[0].cid.toString()).to.equal(expectedMultihash)
+    expect(res[0].path).to.equal(expectedMultihash)
   })
 
-  it('.add file for testing', (done) => {
-    ipfs.add(testfile, (err, res) => {
-      expect(err).to.not.exist()
+  it('.add with Buffer module', async () => {
+    const { Buffer } = require('buffer')
 
-      expect(res).to.have.length(1)
-      expect(res[0].hash).to.equal(expectedMultihash)
-      expect(res[0].path).to.equal(expectedMultihash)
-      done()
-    })
+    const expectedBufferMultihash = 'QmWfVY9y3xjsixTgbd9AorQxH7VtMpzfx2HaWtsoUYecaX'
+    const file = Buffer.from('hello')
+
+    const res = await all(ipfs.add(file))
+
+    expect(res).to.have.length(1)
+    expect(res[0].cid.toString()).to.equal(expectedBufferMultihash)
+    expect(res[0].path).to.equal(expectedBufferMultihash)
   })
 
-  it('.add with Buffer module', (done) => {
-    let Buffer = require('buffer').Buffer
-
-    let expectedBufferMultihash = 'QmWfVY9y3xjsixTgbd9AorQxH7VtMpzfx2HaWtsoUYecaX'
-    let file = Buffer.from('hello')
-
-    ipfs.add(file, (err, res) => {
-      expect(err).to.not.exist()
-
-      expect(res).to.have.length(1)
-      expect(res[0].hash).to.equal(expectedBufferMultihash)
-      expect(res[0].path).to.equal(expectedBufferMultihash)
-      done()
-    })
-  })
-
-  it('.add with empty path and buffer content', (done) => {
+  it('.add with empty path and buffer content', async () => {
     const expectedHash = 'QmWfVY9y3xjsixTgbd9AorQxH7VtMpzfx2HaWtsoUYecaX'
     const content = Buffer.from('hello')
 
-    ipfs.add([{ path: '', content }], (err, res) => {
-      expect(err).to.not.exist()
+    const res = await all(ipfs.add([{ path: '', content }]))
 
-      expect(res).to.have.length(1)
-      expect(res[0].hash).to.equal(expectedHash)
-      expect(res[0].path).to.equal(expectedHash)
-      done()
-    })
+    expect(res).to.have.length(1)
+    expect(res[0].cid.toString()).to.equal(expectedHash)
+    expect(res[0].path).to.equal(expectedHash)
   })
 
-  it('.add with cid-version=1 and raw-leaves=false', (done) => {
+  it('.add with cid-version=1 and raw-leaves=false', async () => {
     const expectedCid = 'bafybeifogzovjqrcxvgt7g36y7g63hvwvoakledwk4b2fr2dl4wzawpnny'
-    const options = { 'cid-version': 1, 'raw-leaves': false }
+    const options = { cidVersion: 1, rawLeaves: false }
 
-    ipfs.add(testfile, options, (err, res) => {
-      expect(err).to.not.exist()
+    const res = await all(ipfs.add(testfile, options))
 
-      expect(res).to.have.length(1)
-      expect(res[0].hash).to.equal(expectedCid)
-      expect(res[0].path).to.equal(expectedCid)
-      done()
-    })
+    expect(res).to.have.length(1)
+    expect(res[0].cid.toString()).to.equal(expectedCid)
+    expect(res[0].path).to.equal(expectedCid)
   })
 
-  it('.add with only-hash=true', function () {
+  it('.add with only-hash=true', async () => {
     const content = String(Math.random() + Date.now())
 
-    return ipfs.add(Buffer.from(content), { onlyHash: true })
-      .then(files => {
-        expect(files).to.have.length(1)
+    const files = await all(ipfs.add(Buffer.from(content), { onlyHash: true }))
+    expect(files).to.have.length(1)
 
-        // 'ipfs.object.get(<hash>)' should timeout because content wasn't actually added
-        return expectTimeout(ipfs.object.get(files[0].hash), 4000)
-      })
+    // 'ipfs.object.get(<hash>)' should timeout because content wasn't actually added
+    return expect(ipfs.object.get(files[0].cid, { timeout: 2000 }))
+      .to.be.rejectedWith(TimeoutError)
   })
 
-  it('.add with options', (done) => {
-    ipfs.add(testfile, { pin: false }, (err, res) => {
-      expect(err).to.not.exist()
+  it('.add with options', async () => {
+    const res = await all(ipfs.add(testfile, { pin: false }))
 
-      expect(res).to.have.length(1)
-      expect(res[0].hash).to.equal(expectedMultihash)
-      expect(res[0].path).to.equal(expectedMultihash)
-      done()
-    })
+    expect(res).to.have.length(1)
+    expect(res[0].cid.toString()).to.equal(expectedMultihash)
+    expect(res[0].path).to.equal(expectedMultihash)
   })
 
-  it('.add pins by default', (done) => {
+  it('.add pins by default', async () => {
     const newContent = Buffer.from(String(Math.random()))
 
-    ipfs.pin.ls((err, pins) => {
-      expect(err).to.not.exist()
-      const initialPinCount = pins.length
-      ipfs.add(newContent, (err, res) => {
-        expect(err).to.not.exist()
+    const initialPins = await all(ipfs.pin.ls())
 
-        ipfs.pin.ls((err, pins) => {
-          expect(err).to.not.exist()
-          expect(pins.length).to.eql(initialPinCount + 1)
-          done()
-        })
-      })
-    })
+    await all(ipfs.add(newContent))
+
+    const pinsAfterAdd = await all(ipfs.pin.ls())
+
+    expect(pinsAfterAdd.length).to.eql(initialPins.length + 1)
   })
 
-  it('.add with pin=false', (done) => {
+  it('.add with pin=false', async () => {
     const newContent = Buffer.from(String(Math.random()))
 
-    ipfs.pin.ls((err, pins) => {
-      expect(err).to.not.exist()
-      const initialPinCount = pins.length
-      ipfs.add(newContent, { pin: false }, (err, res) => {
-        expect(err).to.not.exist()
+    const initialPins = await all(ipfs.pin.ls())
 
-        ipfs.pin.ls((err, pins) => {
-          expect(err).to.not.exist()
-          expect(pins.length).to.eql(initialPinCount)
-          done()
-        })
-      })
-    })
+    await all(ipfs.add(newContent, { pin: false }))
+
+    const pinsAfterAdd = await all(ipfs.pin.ls())
+
+    expect(pinsAfterAdd.length).to.eql(initialPins.length)
   })
 
   HASH_ALGS.forEach((name) => {
-    it(`.add with hash=${name} and raw-leaves=false`, (done) => {
+    it(`.add with hash=${name} and raw-leaves=false`, async () => {
       const content = String(Math.random() + Date.now())
       const file = {
         path: content + '.txt',
         content: Buffer.from(content)
       }
-      const options = { hash: name, 'raw-leaves': false }
+      const options = { hashAlg: name, rawLeaves: false }
 
-      ipfs.add([file], options, (err, res) => {
-        if (err) return done(err)
-        expect(res).to.have.length(1)
-        const cid = new CID(res[0].hash)
-        expect(mh.decode(cid.multihash).name).to.equal(name)
-        done()
-      })
+      const res = await all(ipfs.add([file], options))
+
+      expect(res).to.have.length(1)
+      const { cid } = res[0]
+      expect(mh.decode(cid.multihash).name).to.equal(name)
     })
   })
 
-  it('.add file with progress option', (done) => {
+  it('.add file with progress option', async () => {
     let progress
     let progressCount = 0
 
@@ -195,18 +150,14 @@ describe('.files (the MFS API part)', function () {
       progress = p
     }
 
-    ipfs.add(testfile, { progress: progressHandler }, (err, res) => {
-      expect(err).to.not.exist()
+    const res = await all(ipfs.add(testfile, { progress: progressHandler }))
 
-      expect(res).to.have.length(1)
-      expect(progress).to.be.equal(testfile.byteLength)
-      expect(progressCount).to.be.equal(1)
-
-      done()
-    })
+    expect(res).to.have.length(1)
+    expect(progress).to.be.equal(testfile.byteLength)
+    expect(progressCount).to.be.equal(1)
   })
 
-  it('.add big file with progress option', (done) => {
+  it('.add big file with progress option', async () => {
     let progress = 0
     let progressCount = 0
 
@@ -216,18 +167,14 @@ describe('.files (the MFS API part)', function () {
     }
 
     // TODO: needs to be using a big file
-    ipfs.add(testfile, { progress: progressHandler }, (err, res) => {
-      expect(err).to.not.exist()
+    const res = await all(ipfs.add(testfile, { progress: progressHandler }))
 
-      expect(res).to.have.length(1)
-      expect(progress).to.be.equal(testfile.byteLength)
-      expect(progressCount).to.be.equal(1)
-
-      done()
-    })
+    expect(res).to.have.length(1)
+    expect(progress).to.be.equal(testfile.byteLength)
+    expect(progressCount).to.be.equal(1)
   })
 
-  it('.add directory with progress option', (done) => {
+  it('.add directory with progress option', async () => {
     let progress = 0
     let progressCount = 0
 
@@ -237,256 +184,206 @@ describe('.files (the MFS API part)', function () {
     }
 
     // TODO: needs to be using a directory
-    ipfs.add(testfile, { progress: progressHandler }, (err, res) => {
-      expect(err).to.not.exist()
+    const res = await all(ipfs.add(testfile, { progress: progressHandler }))
 
-      expect(res).to.have.length(1)
-      expect(progress).to.be.equal(testfile.byteLength)
-      expect(progressCount).to.be.equal(1)
-
-      done()
-    })
+    expect(res).to.have.length(1)
+    expect(progress).to.be.equal(testfile.byteLength)
+    expect(progressCount).to.be.equal(1)
   })
 
-  it('.add without progress options', (done) => {
-    ipfs.add(testfile, (err, res) => {
-      expect(err).to.not.exist()
+  it('.add without progress options', async () => {
+    const res = await all(ipfs.add(testfile))
 
-      expect(res).to.have.length(1)
-      done()
-    })
+    expect(res).to.have.length(1)
   })
 
   HASH_ALGS.forEach((name) => {
-    it(`.add with hash=${name} and raw-leaves=false`, (done) => {
+    it(`.add with hash=${name} and raw-leaves=false`, async () => {
       const content = String(Math.random() + Date.now())
       const file = {
         path: content + '.txt',
         content: Buffer.from(content)
       }
-      const options = { hash: name, 'raw-leaves': false }
+      const options = { hashAlg: name, rawLeaves: false }
 
-      ipfs.add([file], options, (err, res) => {
-        expect(err).to.not.exist()
+      const res = await all(ipfs.add([file], options))
 
-        expect(res).to.have.length(1)
-        const cid = new CID(res[0].hash)
-        expect(mh.decode(cid.multihash).name).to.equal(name)
-        done()
-      })
+      expect(res).to.have.length(1)
+      const { cid } = res[0]
+      expect(mh.decode(cid.multihash).name).to.equal(name)
     })
   })
 
-  it('.addPullStream with object chunks and pull stream content', (done) => {
+  it('.add with object chunks and iterable content', async () => {
     const expectedCid = 'QmRf22bZar3WKmojipms22PkXH1MZGmvsqzQtuSvQE3uhm'
 
-    pull(
-      values([{ content: values([Buffer.from('test')]) }]),
-      ipfs.addPullStream(),
-      collect((err, res) => {
-        expect(err).to.not.exist()
+    const res = await pipe(
+      [{ content: [Buffer.from('test')] }],
+      ipfs.add,
+      all
+    )
 
-        expect(res).to.have.length(1)
-        expect(res[0]).to.deep.equal({ path: expectedCid, hash: expectedCid, size: 12 })
-        done()
-      })
+    expect(res).to.have.length(1)
+    res[0].cid = res[0].cid.toString()
+    expect(res[0]).to.deep.equal({ path: expectedCid, cid: expectedCid, size: 12 })
+  })
+
+  it('.add with iterable', async () => {
+    const expectedCid = 'QmRf22bZar3WKmojipms22PkXH1MZGmvsqzQtuSvQE3uhm'
+    const res = await all(ipfs.add([Buffer.from('test')]))
+
+    expect(res).to.have.length(1)
+    res[0].cid = res[0].cid.toString()
+    expect(res[0]).to.deep.equal({ path: expectedCid, cid: expectedCid, size: 12 })
+  })
+
+  it('files.mkdir', async () => {
+    await ipfs.files.mkdir('/test-folder')
+  })
+
+  it('files.flush', async () => {
+    await ipfs.files.flush('/')
+  })
+
+  it('files.cp', async () => {
+    const folder = `/test-folder-${Math.random()}`
+
+    await ipfs.files.mkdir(folder)
+    await ipfs.files.cp([
+      '/ipfs/Qma4hjFTnCasJ8PVp3mZbZK5g2vGDT4LByLJ7m8ciyRFZP',
+      `${folder}/test-file-${Math.random()}`
+    ])
+  })
+
+  it('files.cp with non-array arguments', async () => {
+    const folder = `/test-folder-${Math.random()}`
+
+    await ipfs.files.mkdir(folder)
+    await ipfs.files.cp(
+      '/ipfs/Qma4hjFTnCasJ8PVp3mZbZK5g2vGDT4LByLJ7m8ciyRFZP',
+      `${folder}/test-file-${Math.random()}`
     )
   })
 
-  it('.add with pull stream (callback)', (done) => {
-    const expectedCid = 'QmRf22bZar3WKmojipms22PkXH1MZGmvsqzQtuSvQE3uhm'
-
-    ipfs.add(values([Buffer.from('test')]), (err, res) => {
-      expect(err).to.not.exist()
-
-      expect(res).to.have.length(1)
-      expect(res[0]).to.deep.equal({ path: expectedCid, hash: expectedCid, size: 12 })
-      done()
-    })
-  })
-
-  it('.add with pull stream (promise)', () => {
-    const expectedCid = 'QmRf22bZar3WKmojipms22PkXH1MZGmvsqzQtuSvQE3uhm'
-
-    return ipfs.add(values([Buffer.from('test')]))
-      .then((res) => {
-        expect(res).to.have.length(1)
-        expect(res[0]).to.deep.equal({ path: expectedCid, hash: expectedCid, size: 12 })
-      })
-  })
-
-  it('.add with array of objects with pull stream content', () => {
-    const expectedCid = 'QmRf22bZar3WKmojipms22PkXH1MZGmvsqzQtuSvQE3uhm'
-
-    return ipfs.add([{ content: values([Buffer.from('test')]) }])
-      .then((res) => {
-        expect(res).to.have.length(1)
-        expect(res[0]).to.eql({ path: expectedCid, hash: expectedCid, size: 12 })
-      })
-  })
-
-  it('files.mkdir', (done) => {
-    ipfs.files.mkdir('/test-folder', done)
-  })
-
-  it('files.flush', (done) => {
-    ipfs.files.flush('/', done)
-  })
-
-  it('files.cp', () => {
-    const folder = `/test-folder-${Math.random()}`
-
-    return ipfs.files.mkdir(folder)
-      .then(() => ipfs.files.cp([
-        '/ipfs/Qma4hjFTnCasJ8PVp3mZbZK5g2vGDT4LByLJ7m8ciyRFZP',
-        `${folder}/test-file-${Math.random()}`
-      ]))
-  })
-
-  it('files.cp with non-array arguments', () => {
-    const folder = `/test-folder-${Math.random()}`
-
-    return ipfs.files.mkdir(folder)
-      .then(() => ipfs.files.cp(
-        '/ipfs/Qma4hjFTnCasJ8PVp3mZbZK5g2vGDT4LByLJ7m8ciyRFZP',
-        `${folder}/test-file-${Math.random()}`
-      ))
-  })
-
-  it('files.mv', () => {
+  it('files.mv', async () => {
     const folder = `/test-folder-${Math.random()}`
     const source = `${folder}/test-file-${Math.random()}`
     const dest = `${folder}/test-file-${Math.random()}`
 
-    return ipfs.files.mkdir(folder)
-      .then(() => ipfs.files.cp(
-        '/ipfs/Qma4hjFTnCasJ8PVp3mZbZK5g2vGDT4LByLJ7m8ciyRFZP',
-        source
-      ))
-      .then(() => ipfs.files.mv([
-        source,
-        dest
-      ]))
+    await ipfs.files.mkdir(folder)
+    await ipfs.files.cp(
+      '/ipfs/Qma4hjFTnCasJ8PVp3mZbZK5g2vGDT4LByLJ7m8ciyRFZP',
+      source
+    )
+    await ipfs.files.mv([
+      source,
+      dest
+    ])
   })
 
-  it('files.mv with non-array arguments', () => {
+  it('files.mv with non-array arguments', async () => {
     const folder = `/test-folder-${Math.random()}`
     const source = `${folder}/test-file-${Math.random()}`
     const dest = `${folder}/test-file-${Math.random()}`
 
-    return ipfs.files.mkdir(folder)
-      .then(() => ipfs.files.cp(
-        '/ipfs/Qma4hjFTnCasJ8PVp3mZbZK5g2vGDT4LByLJ7m8ciyRFZP',
-        source
-      ))
-      .then(() => ipfs.files.mv(
-        source,
-        dest
-      ))
+    await ipfs.files.mkdir(folder)
+    await ipfs.files.cp(
+      '/ipfs/Qma4hjFTnCasJ8PVp3mZbZK5g2vGDT4LByLJ7m8ciyRFZP',
+      source
+    )
+    await ipfs.files.mv(
+      source,
+      dest
+    )
   })
 
-  it('files.ls', () => {
+  it('files.ls', async () => {
     const folder = `/test-folder-${Math.random()}`
     const file = `${folder}/test-file-${Math.random()}`
 
-    return ipfs.files.mkdir(folder)
-      .then(() => ipfs.files.write(file, Buffer.from('Hello, world'), {
-        create: true
-      }))
-      .then(() => ipfs.files.ls(folder))
-      .then(files => {
-        expect(files.length).to.equal(1)
-      })
+    await ipfs.files.mkdir(folder)
+    await ipfs.files.write(file, Buffer.from('Hello, world'), {
+      create: true
+    })
+    const files = await all(ipfs.files.ls(folder))
+
+    expect(files.length).to.equal(1)
   })
 
-  it('files.ls mfs root by default', () => {
+  it('files.ls mfs root by default', async () => {
     const folder = `test-folder-${Math.random()}`
 
-    return ipfs.files.mkdir(`/${folder}`)
-      .then(() => ipfs.files.ls())
-      .then(files => {
-        expect(files.find(file => file.name === folder)).to.be.ok()
-      })
+    await ipfs.files.mkdir(`/${folder}`)
+    const files = await all(ipfs.files.ls())
+
+    expect(files.find(file => file.name === folder)).to.be.ok()
   })
 
-  it('files.write', (done) => {
-    ipfs.files
-      .write('/test-folder/test-file-2.txt', Buffer.from('hello world'), { create: true }, (err) => {
-        expect(err).to.not.exist()
+  it('files.write', async () => {
+    await ipfs.files.write('/test-folder/test-file-2.txt', Buffer.from('hello world'), {
+      create: true
+    })
 
-        ipfs.files.read('/test-folder/test-file-2.txt', (err, buf) => {
-          expect(err).to.not.exist()
-          expect(buf.toString()).to.be.equal('hello world')
-          done()
-        })
-      })
+    const buf = Buffer.concat(await all(ipfs.files.read('/test-folder/test-file-2.txt')))
+
+    expect(buf.toString()).to.be.equal('hello world')
   })
 
-  it('files.write without options', (done) => {
-    ipfs.files
-      .write('/test-folder/test-file-2.txt', Buffer.from('hello world'), (err) => {
-        expect(err).to.not.exist()
+  it('files.write without options', async () => {
+    await ipfs.files.write('/test-folder/test-file-2.txt', Buffer.from('hello world'))
 
-        ipfs.files.read('/test-folder/test-file-2.txt', (err, buf) => {
-          expect(err).to.not.exist()
-          expect(buf.toString()).to.be.equal('hello world')
-          done()
-        })
-      })
+    const buf = Buffer.concat(await all(ipfs.files.read('/test-folder/test-file-2.txt')))
+
+    expect(buf.toString()).to.be.equal('hello world')
   })
 
-  it('files.stat', () => {
+  it('files.stat', async () => {
     const folder = `/test-folder-${Math.random()}`
     const file = `${folder}/test-file-${Math.random()}`
 
-    return ipfs.files.mkdir(folder)
-      .then(() => ipfs.files.write(file, testfile, {
-        create: true
-      }))
-      .then(() => ipfs.files.stat(file))
-      .then((stats) => {
-        expect(stats).to.deep.equal({
-          hash: 'QmQhouoDPAnzhVM148yCa9CbUXK65wSEAZBtgrLGHtmdmP',
-          size: 12,
-          cumulativeSize: 70,
-          blocks: 1,
-          type: 'file',
-          withLocality: false,
-          local: undefined,
-          sizeLocal: undefined
-        })
-      })
-  })
+    await ipfs.files.mkdir(folder)
+    await ipfs.files.write(file, testfile, {
+      create: true
+    })
 
-  it('files.stat file that does not exist()', (done) => {
-    ipfs.files.stat('/test-folder/does-not-exist()', (err, res) => {
-      expect(err).to.exist()
-      expect(err.code).to.equal(0)
-      expect(err.type).to.equal('error')
+    const stats = await ipfs.files.stat(file)
+    stats.cid = stats.cid.toString()
 
-      done()
+    expect(stats).to.deep.equal({
+      cid: 'QmQhouoDPAnzhVM148yCa9CbUXK65wSEAZBtgrLGHtmdmP',
+      size: 12,
+      cumulativeSize: 70,
+      blocks: 1,
+      type: 'file',
+      withLocality: false
     })
   })
 
-  it('files.read', () => {
+  it('files.stat file that does not exist()', async () => {
+    await expect(ipfs.files.stat('/test-folder/does-not-exist()')).to.be.rejectedWith({
+      code: 0,
+      type: 'error'
+    })
+  })
+
+  it('files.read', async () => {
     const folder = `/test-folder-${Math.random()}`
     const file = `${folder}/test-file-${Math.random()}`
 
-    return ipfs.files.mkdir(folder)
-      .then(() => ipfs.files.write(file, testfile, {
-        create: true
-      }))
-      .then(() => ipfs.files.read(file))
-      .then((buf) => {
-        expect(Buffer.from(buf)).to.deep.equal(testfile)
-      })
+    await ipfs.files.mkdir(folder)
+    await ipfs.files.write(file, testfile, {
+      create: true
+    })
+    const buf = Buffer.concat(await all(ipfs.files.read(file)))
+
+    expect(Buffer.from(buf)).to.deep.equal(testfile)
   })
 
-  it('files.rm without options', (done) => {
-    ipfs.files.rm('/test-folder/test-file-2.txt', done)
+  it('files.rm without options', async () => {
+    await ipfs.files.rm('/test-folder/test-file-2.txt')
   })
 
-  it('files.rm', (done) => {
-    ipfs.files.rm('/test-folder', { recursive: true }, done)
+  it('files.rm', async () => {
+    await ipfs.files.rm('/test-folder', { recursive: true })
   })
 })

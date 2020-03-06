@@ -1,11 +1,19 @@
 'use strict'
 
 const createServer = require('ipfsd-ctl').createServer
-
-const server = createServer()
+const EchoServer = require('interface-ipfs-core/src/utils/echo-http-server')
+const server = createServer({
+  host: '127.0.0.1',
+  port: 43134
+}, {
+  type: 'go',
+  ipfsHttpModule: require('./'),
+  ipfsBin: require('go-ipfs-dep').path()
+})
+const echoServer = EchoServer.createServer()
 
 module.exports = {
-  bundlesize: { maxSize: '237kB' },
+  bundlesize: { maxSize: '90kB' },
   webpack: {
     resolve: {
       mainFields: ['browser', 'main']
@@ -22,7 +30,23 @@ module.exports = {
     singleRun: true
   },
   hooks: {
-    pre: server.start.bind(server),
-    post: server.stop.bind(server)
+    node: {
+      pre: () => echoServer.start(),
+      post: () => echoServer.stop()
+    },
+    browser: {
+      pre: () => {
+        return Promise.all([
+          server.start(),
+          echoServer.start()
+        ])
+      },
+      post: () => {
+        return Promise.all([
+          server.stop(),
+          echoServer.stop()
+        ])
+      }
+    }
   }
 }
